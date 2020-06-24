@@ -4,12 +4,12 @@ from flask import Flask, request, jsonify, send_from_directory
 from ..common.base_app import app as base
 from ..common import utils, api
 
-app = Flask(__name__)
-app.register_blueprint(base)
-logger = utils.create_logger(__name__)
-
-NOTEBOOK = "./kubeflow_jupyter/common/yaml/notebook.yaml"
 BASE_HREF = os.environ.get("BASE_HREF", "/")
+NOTEBOOK = "./kubeflow_jupyter/common/yaml/notebook.yaml"
+
+app = Flask(__name__)
+app.register_blueprint(base, url_prefix=BASE_HREF)
+logger = utils.create_logger(__name__)
 
 # POSTers
 @app.route(os.path.join(BASE_HREF, "api/namespaces/<namespace>/notebooks"), methods=["POST"])
