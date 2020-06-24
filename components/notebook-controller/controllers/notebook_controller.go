@@ -66,10 +66,11 @@ func ignoreNotFound(err error) error {
 // NotebookReconciler reconciles a Notebook object
 type NotebookReconciler struct {
 	client.Client
-	Log           logr.Logger
-	Scheme        *runtime.Scheme
-	Metrics       *metrics.Metrics
-	EventRecorder record.EventRecorder
+	Log             logr.Logger
+	Scheme          *runtime.Scheme
+	Metrics         *metrics.Metrics
+	EventRecorder   record.EventRecorder
+	NamespacePrefix string
 }
 
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
@@ -82,6 +83,11 @@ type NotebookReconciler struct {
 func (r *NotebookReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
 	log := r.Log.WithValues("notebook", req.NamespacedName)
+
+	// filter out namespace if prefix is provided
+	if !strings.HasPrefix(req.NamespacedName.Namespace, r.NamespacePrefix) {
+		return ctrl.Result{}, nil
+	}
 
 	// TODO(yanniszark): Can we avoid reconciling Events and Notebook in the same queue?
 	event := &corev1.Event{}
@@ -489,7 +495,7 @@ func nbNameFromInvolvedObject(c client.Client, object *corev1.ObjectReference) (
 		pod := &corev1.Pod{}
 		err := c.Get(
 			context.TODO(),
-			types.NamespacedName {
+			types.NamespacedName{
 				Namespace: namespace,
 				Name:      name,
 			},

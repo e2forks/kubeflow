@@ -18,6 +18,7 @@ package main
 import (
 	"flag"
 	"os"
+	"strings"
 
 	nbv1 "github.com/kubeflow/kubeflow/components/notebook-controller/api/v1"
 	nbv1alpha1 "github.com/kubeflow/kubeflow/components/notebook-controller/api/v1alpha1"
@@ -28,7 +29,9 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -46,9 +49,26 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
+type stringArray []string
+
+func (i *stringArray) String() string {
+	return strings.Join(*i, ",")
+}
+
+func (i *stringArray) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
 func main() {
+
+	var namespaces stringArray
+	var namespacePrefix string
 	var metricsAddr string
 	var enableLeaderElection bool
+
+	flag.Var(&namespaces, "namespace", "The namespace(s) to monitor. If not provided, monitor all namespaces.")
+	flag.StringVar(&namespacePrefix, "namespace-prefix", "", "If provided filter out namespace without this prefix.")
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
@@ -56,22 +76,38 @@ func main() {
 
 	ctrl.SetLogger(zap.Logger(true))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:             scheme,
-		MetricsBindAddress: metricsAddr,
-		LeaderElection:     enableLeaderElection,
-	})
+	var mgr manager.Manager
+	var err error
+
+	if len(namespaces) == 0 {
+		// monitor all namespaces
+		mgr, err = ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+			Scheme:             scheme,
+			MetricsBindAddress: metricsAddr,
+			LeaderElection:     enableLeaderElection,
+		})
+	} else {
+		// monitor a subset of namespaces
+		mgr, err = ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+			Scheme:             scheme,
+			MetricsBindAddress: metricsAddr,
+			LeaderElection:     enableLeaderElection,
+			NewCache:           cache.MultiNamespacedCacheBuilder(namespaces),
+		})
+	}
+
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
 	if err = (&controllers.NotebookReconciler{
-		Client:        mgr.GetClient(),
-		Log:           ctrl.Log.WithName("controllers").WithName("Notebook"),
-		Scheme:        mgr.GetScheme(),
-		Metrics:       controller_metrics.NewMetrics(mgr.GetClient()),
-		EventRecorder: mgr.GetEventRecorderFor("notebook-controller"),
+		Client:          mgr.GetClient(),
+		Log:             ctrl.Log.WithName("controllers").WithName("Notebook"),
+		Scheme:          mgr.GetScheme(),
+		Metrics:         controller_metrics.NewMetrics(mgr.GetClient()),
+		EventRecorder:   mgr.GetEventRecorderFor("notebook-controller"),
+		NamespacePrefix: namespacePrefix,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Notebook")
 		os.Exit(1)
