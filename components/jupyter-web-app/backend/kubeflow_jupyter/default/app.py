@@ -1,3 +1,5 @@
+import os
+import os.path
 from flask import Flask, request, jsonify, send_from_directory
 from ..common.base_app import app as base
 from ..common import utils, api
@@ -7,10 +9,10 @@ app.register_blueprint(base)
 logger = utils.create_logger(__name__)
 
 NOTEBOOK = "./kubeflow_jupyter/common/yaml/notebook.yaml"
-
+BASE_HREF = os.environ.get("BASE_HREF", "/")
 
 # POSTers
-@app.route("/api/namespaces/<namespace>/notebooks", methods=["POST"])
+@app.route(os.path.join(BASE_HREF, "api/namespaces/<namespace>/notebooks"), methods=["POST"])
 def post_notebook(namespace):
     body = request.get_json()
     defaults = utils.spawner_ui_config()
@@ -77,7 +79,7 @@ def serve_root():
     return send_from_directory("./static/", "index.html")
 
 
-@app.route("/<path:path>", methods=["GET"])
+@app.route(os.path.join(BASE_HREF, "<path:path>"), methods=["GET"])
 def static_proxy(path):
     logger.info("Sending file '/static/{}' for path: {}".format(path, path))
     return send_from_directory("./static/", path)
